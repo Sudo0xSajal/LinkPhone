@@ -172,6 +172,16 @@ app.prepare().then(() => {
       return;
     }
 
+    // FIXED 🔴: If the same deviceId reconnects (e.g. Android network blip),
+    // the old socket stays in the map but is already dead. Explicitly
+    // disconnect the stale socket before overwriting the map entry so we don't
+    // leak socket objects and the old entry doesn't silently swallow commands.
+    const existing = deviceSockets.get(deviceId);
+    if (existing && existing.id !== socket.id && existing.connected) {
+      console.warn(`[socket.io] ⚠️  Replacing stale socket for "${deviceId}"`);
+      existing.disconnect(true);
+    }
+
     deviceSockets.set(deviceId, socket);
     console.log(`✅ Device "${deviceId}" connected via Socket.io`);
 
@@ -182,7 +192,14 @@ app.prepare().then(() => {
     });
 
     socket.on('battery_update', (data) => {
-      updateDeviceStatus(deviceId, true, data?.level);
+      // FIXED 🟠: battery level must be 0–100; reject garbage values from a
+      // misbehaving client rather than writing them into the DB.
+      const level = data?.level;
+      if (typeof level === 'number' && level >= 0 && level <= 100) {
+        updateDeviceStatus(deviceId, true, level);
+      } else {
+        updateDeviceStatus(deviceId, true);
+      }
     });
 
     socket.on('location_update', (data) => {
@@ -196,7 +213,11 @@ app.prepare().then(() => {
     // await the DB write so the "device went offline" heartbeat reaches the DB
     // before the socket is fully torn down on shutdown.
     socket.on('disconnect', async (reason) => {
-      deviceSockets.delete(deviceId);
+      // FIXED 🟡: Only delete the map entry if it still points to THIS socket.
+      // If a reconnect already replaced it we must not evict the new socket.
+      if (deviceSockets.get(deviceId) === socket) {
+        deviceSockets.delete(deviceId);
+      }
       console.log(`❌ Device "${deviceId}" disconnected (${reason})`);
       await updateDeviceStatus(deviceId, false);
     });
@@ -229,8 +250,17 @@ app.prepare().then(() => {
     process.exit(0);
   };
 
-  const forceExit = () =>
-    setTimeout(() => { console.error('[server] Force exit'); process.exit(1); }, 10_000);
+  // FIXED 🔴: The original forceExit returned the timer but never called
+  // timer.unref(), so the force-exit timeout kept the Node process alive even
+  // after a clean shutdown, preventing normal exit.  Using .unref() lets Node
+  // exit normally if shutdown() finishes before the 10-second deadline.
+  const forceExit = () => {
+    const t = setTimeout(
+      () => { console.error('[server] Force exit'); process.exit(1); },
+      10_000,
+    );
+    t.unref();
+  };
 
   process.on('SIGTERM', () => { forceExit(); shutdown('SIGTERM'); });
   process.on('SIGINT',  () => { forceExit(); shutdown('SIGINT');  });

@@ -55,6 +55,17 @@ export const deviceRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Pairing code expired" });
       }
 
+      // ✅ FIX: Verify that the owner exists in the database
+      const owner = await ctx.prisma.user.findUnique({
+        where: { id: stored.ownerId },
+      });
+      if (!owner) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Owner user not found. Please sign out and sign in again.",
+        });
+      }
+
       const device = await ctx.prisma.device.create({
         data: {
           name: input.deviceName, publicKey: input.publicKey ?? null,

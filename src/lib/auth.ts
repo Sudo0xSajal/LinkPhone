@@ -1,15 +1,18 @@
 import { NextAuthOptions } from "next-auth";
+import type { JWT } from "next-auth/jwt";
 import GoogleProvider from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/db";
 
 const useSecureCookies = process.env.NEXTAUTH_URL?.startsWith("https://") ?? false;
 const cookiePrefix = useSecureCookies ? "__Secure-" : "";
-const useDatabaseAuth = process.env.NODE_ENV === "production";
+
+// ✅ FIX: Always use Prisma adapter – guarantees a User record in DB on sign‑in
+const adapter = PrismaAdapter(prisma) as any;
 
 function buildAuthOptions(): NextAuthOptions {
   return {
-    adapter: useDatabaseAuth ? (PrismaAdapter(prisma) as any) : undefined,
+    adapter, // 👈 Always enabled
 
     providers: [
       GoogleProvider({
@@ -44,7 +47,7 @@ function buildAuthOptions(): NextAuthOptions {
       },
     },
 
-    session: { strategy: useDatabaseAuth ? "database" : "jwt" },
+    session: { strategy: "database" }, // 👈 Always use database sessions
 
     callbacks: {
       async jwt({ token, user }) {
@@ -52,7 +55,8 @@ function buildAuthOptions(): NextAuthOptions {
         return token;
       },
       async session({ session, user, token }) {
-        const sessionUserId = useDatabaseAuth ? user?.id : token?.sub;
+        // With database strategy, 'user' is always available
+        const sessionUserId = user?.id ?? token?.sub;
 
         if (session.user && sessionUserId) {
           session.user.id = sessionUserId;
