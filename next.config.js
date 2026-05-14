@@ -1,9 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  swcMinify: true,
   transpilePackages: ["@auth/prisma-adapter"],
 
-  // Next 14+: use `remotePatterns` instead of the deprecated `domains` key
+  // Image optimization – allow external domains
   images: {
     remotePatterns: [
       {
@@ -12,7 +13,6 @@ const nextConfig = {
         pathname: "/**",
       },
       {
-        // QR code generator used in the pairing flow
         protocol: "https",
         hostname: "api.qrserver.com",
         pathname: "/**",
@@ -21,8 +21,7 @@ const nextConfig = {
   },
 
   async headers() {
-    const allowedOrigin =
-      process.env.NEXTAUTH_URL || "http://localhost:3000";
+    const allowedOrigin = process.env.NEXTAUTH_URL || "http://localhost:3000";
     const isProd = process.env.NODE_ENV === "production";
 
     return [
@@ -30,44 +29,42 @@ const nextConfig = {
       {
         source: "/(.*)",
         headers: [
-          // Prevent this site from being embedded in iframes (clickjacking)
           { key: "X-Frame-Options", value: "DENY" },
-          // Stop browsers guessing content types (MIME-sniffing attacks)
           { key: "X-Content-Type-Options", value: "nosniff" },
-          // Only send referrer to same origin
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // Disable browser features not needed by this app
           {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=(), payment=()",
           },
-          // Force HTTPS in production (HSTS)
-          ...(isProd
-            ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }]
-            : []),
+          ...(isProd ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }] : []),
         ],
       },
 
-      // ── General API CORS ─────────────────────────────────────────────────
+      // ── General API CORS (restricted to allowed origin) ─────────────────
       {
         source: "/api/(.*)",
         headers: [
-          { key: "Access-Control-Allow-Origin",  value: allowedOrigin },
+          { key: "Access-Control-Allow-Origin", value: allowedOrigin },
           { key: "Access-Control-Allow-Methods", value: "GET,POST,PUT,DELETE,OPTIONS" },
           { key: "Access-Control-Allow-Headers", value: "Content-Type, Authorization, x-internal-secret" },
         ],
       },
 
-      // ── Android app endpoints – open to any origin ───────────────────────
+      // ── Android app endpoints – restrict to configured origin ───────────
       {
         source: "/api/android/(.*)",
         headers: [
-          { key: "Access-Control-Allow-Origin",  value: "*" },
+          { key: "Access-Control-Allow-Origin", value: process.env.ANDROID_APP_ORIGIN || "null" },
           { key: "Access-Control-Allow-Methods", value: "GET,POST,OPTIONS" },
           { key: "Access-Control-Allow-Headers", value: "Content-Type" },
         ],
       },
     ];
+  },
+
+  // Environment variables exposed to the browser
+  env: {
+    NEXT_PUBLIC_LIVEKIT_URL: process.env.LIVEKIT_URL || process.env.NEXT_PUBLIC_LIVEKIT_URL,
   },
 };
 

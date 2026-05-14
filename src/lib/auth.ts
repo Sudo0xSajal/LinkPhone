@@ -12,7 +12,7 @@ const adapter = PrismaAdapter(prisma) as any;
 
 function buildAuthOptions(): NextAuthOptions {
   return {
-    adapter, // 👈 Always enabled
+    adapter, // Always enabled
 
     providers: [
       GoogleProvider({
@@ -47,7 +47,7 @@ function buildAuthOptions(): NextAuthOptions {
       },
     },
 
-    session: { strategy: "database" }, // 👈 Always use database sessions
+    session: { strategy: "database" }, // Always use database sessions
 
     callbacks: {
       async jwt({ token, user }) {
