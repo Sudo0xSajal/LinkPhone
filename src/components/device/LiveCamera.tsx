@@ -6,7 +6,7 @@ import { Video, VideoOff } from "lucide-react";
 
 interface LiveCameraProps {
   deviceId: string;
-  token?: string; // FIX: plain string, not { token: string }
+  token?: string;
 }
 
 export function LiveCamera({ deviceId, token }: LiveCameraProps) {
@@ -16,8 +16,8 @@ export function LiveCamera({ deviceId, token }: LiveCameraProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!token) return;
-    if (token === "missing-livekit-credentials") return;
+    // Exit early if we have no valid token
+    if (!token || token === "missing-livekit-credentials") return;
 
     const livekitUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
     if (!livekitUrl) {
@@ -28,38 +28,42 @@ export function LiveCamera({ deviceId, token }: LiveCameraProps) {
     const room = new Room();
     roomRef.current = room;
 
+    // --- 1. Connect to the LiveKit server ---
     room
       .connect(livekitUrl, token, { autoSubscribe: true })
       .then(() => {
         setIsConnected(true);
         setError(null);
-        room.localParticipant.setCameraEnabled(false).catch(() => {});
 
-        room.remoteParticipants.forEach((participant) => {
-          participant.trackPublications.forEach((pub) => {
-            if (pub.kind === Track.Kind.Video && pub.track && videoRef.current) {
-              pub.track.attach(videoRef.current);
-            }
-          });
-        });
-
-        room.on(RoomEvent.TrackSubscribed, (track) => {
-          if (track.kind === Track.Kind.Video && videoRef.current) {
-            track.attach(videoRef.current);
-          }
-        });
+        // --- The critical fix: Do not manually enable local camera tracks. ---
+        // The phone's camera stream is a *remote* track. We just need to subscribe to it.
+        // LiveKit will handle the negotiation. We'll attach the track when it's published.
       })
       .catch((err) => {
         console.error("[LiveCamera] Connection error:", err);
         setError(err.message ?? "Connection failed");
       });
 
-    return () => {
-      room.disconnect();
-      roomRef.current = null;
+    // --- 2. Handle incoming video tracks ---
+    // This event fires when a new remote track (the phone's camera) is published.
+    const handleTrackSubscribed = (track: any) => {
+      if (track.kind === Track.Kind.Video && videoRef.current) {
+        track.attach(videoRef.current);
+      }
     };
-  }, [token]);
 
+    room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
+
+    // Cleanup function to disconnect the room when the component unmounts or token changes
+    return () => {
+      if (roomRef.current) {
+        roomRef.current.disconnect();
+        roomRef.current = null;
+      }
+    };
+  }, [token]); // Re-run effect if the token changes
+
+  // --- Rendering logic (unchanged) ---
   if (!token) return <Placeholder icon={<VideoOff />} message="Fetching LiveKit token…" />;
   if (token === "missing-livekit-credentials")
     return <Placeholder icon={<VideoOff />} message="⚠️ LiveKit not configured. Add credentials to .env" />;
@@ -73,11 +77,10 @@ export function LiveCamera({ deviceId, token }: LiveCameraProps) {
     );
 
   return (
-    <div className="relative aspect-video overflow-hidden rounded-2xl bg-black">
-      <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-contain" />
-      <div className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1 text-xs">
-        <Video className="h-3 w-3 text-green-400" />
-        <span className="text-green-400">Live</span>
+    <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-black">
+      <video ref={videoRef} autoPlay playsInline className="h-full w-full object-contain" />
+      <div className="absolute bottom-2 left-2 rounded bg-black/50 px-2 py-1 text-xs text-white">
+        Live
       </div>
     </div>
   );
@@ -85,9 +88,9 @@ export function LiveCamera({ deviceId, token }: LiveCameraProps) {
 
 function Placeholder({ icon, message }: { icon: React.ReactNode; message: string }) {
   return (
-    <div className="flex aspect-video flex-col items-center justify-center gap-3 rounded-2xl bg-black/50 text-gray-400">
+    <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-lg bg-muted">
       {icon}
-      <p className="max-w-xs text-center text-sm">{message}</p>
+      <p className="text-sm text-muted-foreground">{message}</p>
     </div>
   );
 }
