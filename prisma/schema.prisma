@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  accounts      Account[]
+  sessions      Session[]
+  devices       Device[]
+  activityLogs  ActivityLog[]
+  automationRules AutomationRule[]
+  ownedSharedAccess SharedAccess[] @relation("OwnerAccess")
+  guestSharedAccess SharedAccess[] @relation("GuestAccess")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  @@unique([identifier, token])
+}
+
+model Device {
+  id            String   @id @default(cuid())
+  name          String
+  model         String?
+  osVersion     String?
+  publicKey     String?
+  isOnline      Boolean   @default(false)
+  lastSeen      DateTime  @default(now())
+  batteryLevel  Int?      @default(0)
+  location      Json?
+  ownerId       String
+  pairedAt      DateTime  @default(now())
+  isActive      Boolean   @default(true)
+  allowedFeatures String[] @default([])
+  owner         User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  activityLogs  ActivityLog[]
+  sharedAccess  SharedAccess[]
+  automationRules AutomationRule[]
+  @@index([ownerId])
+  @@index([isOnline])
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  deviceId    String
+  userId      String
+  action      String
+  status      String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  ipAddress   String?
+  userAgent   String?
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([deviceId])
+  @@index([createdAt(sort: Desc)])
+}
+
+model AutomationRule {
+  id          String   @id @default(cuid())
+  name        String
+  deviceId    String
+  trigger     String
+  action      String
+  actionParams Json?
+  isEnabled   Boolean  @default(true)
+  lastTriggered DateTime?
+  createdAt   DateTime @default(now())
+  userId      String
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SharedAccess {
+  id           String   @id @default(cuid())
+  deviceId     String
+  ownerId      String
+  guestId      String
+  permissions  String[]
+  invitedAt    DateTime @default(now())
+  expiresAt    DateTime?
+  status       String   @default("pending")
+  device       Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  owner        User     @relation("OwnerAccess", fields: [ownerId], references: [id])
+  guest        User     @relation("GuestAccess", fields: [guestId], references: [id])
+  @@unique([deviceId, guestId])
+}
