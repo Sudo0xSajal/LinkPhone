@@ -8,7 +8,9 @@ export function useWebRTC(roomName: string, token?: string) {
     const room = new Room();
     roomRef.current = room;
     room.connect(process.env.NEXT_PUBLIC_LIVEKIT_URL!, token).then(() => setIsConnected(true)).catch(console.error);
-    return () => room.disconnect();
+    return () => {
+      room.disconnect().catch(console.error);
+    };
   }, [token, roomName]);
   return { room: roomRef.current, isConnected };
 }
