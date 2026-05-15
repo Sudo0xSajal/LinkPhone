@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-// @ts-expect-error Next.js handles global CSS side-effect imports at build time
 import "./globals.css";
 import { Providers } from "./providers";
 import { Toaster } from "sonner";
